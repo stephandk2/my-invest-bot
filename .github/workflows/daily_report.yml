@@ -1,5 +1,6 @@
 name: Daily Market Report
 on:
+  workflow_dispatch:
   schedule:
     - cron: '00 7 * * 1-5'  # 한국시간 16:00 (평일)
     - cron: '00 23 * * 0-4' # 한국시간 08:00 (평일)
