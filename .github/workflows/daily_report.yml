@@ -18,5 +18,5 @@ jobs:
           KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
           GSPREAD_JSON: ${{ secrets.GSPREAD_SERVICE_ACCOUNT }}
         run: |
-          pip install requests gspread oauth2client
+          pip install requests gspread oauth2client pytz
           python main.py
