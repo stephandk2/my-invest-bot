@@ -1,0 +1,21 @@
+name: Daily Market Report
+on:
+  schedule:
+    - cron: '00 7 * * 1-5'  # 한국시간 16:00 (평일)
+    - cron: '00 23 * * 0-4' # 한국시간 08:00 (평일)
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with: { python-version: '3.9' }
+      - name: Run Script
+        env:
+          KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
+          KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
+          GSPREAD_JSON: ${{ secrets.GSPREAD_SERVICE_ACCOUNT }}
+        run: |
+          pip install requests gspread oauth2client
+          python main.py
