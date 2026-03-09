@@ -12,36 +12,18 @@ APP_SECRET = os.environ.get("KIS_APP_SECRET")
 GSPREAD_JSON = os.environ.get("GSPREAD_JSON")
 
 def get_access_token():
-    """한국투자증권 REST API 접근 토큰 발급"""
-    # [주의] 실전투자: openapi.koreainvestment.com:9443
-    #        모의투자: openapivts.koreainvestment.com:29443 (도메인과 포트가 다름)
     base_url = "https://openapi.koreainvestment.com:9443" 
     url = f"{base_url}/oauth2/tokenP"
-    
-    # 핵심 수정: secretkey -> appsecret
     payload = {
         "grant_type": "client_credentials",
         "appkey": APP_KEY,
         "appsecret": APP_SECRET  
     }
-    
     headers = {"Content-Type": "application/json; charset=UTF-8"}
     
     print(f"DEBUG: 토큰 발급 시도 중... (URL: {url})")
-# 기존 코드
-    # res = requests.get(url, headers=headers, params=params)
-    # kospi = res.json()['output']['bstp_nmix_prpr']
-
-    # 변경할 코드 (거절 사유를 명확히 출력하도록 수정)
-    res = requests.get(url, headers=headers, params=params)
+    res = requests.post(url, headers=headers, data=json.dumps(payload))
     res_data = res.json()
-    
-    # 'output' 상자가 없으면 증권사가 보낸 진짜 에러 메시지를 출력합니다.
-    if 'output' not in res_data:
-        print(f"❌ KOSPI 조회 거절됨. 증권사 응답 내용:\n{json.dumps(res_data, indent=2, ensure_ascii=False)}")
-        raise Exception("코스피 데이터 수신 실패")
-        
-    kospi = res_data['output']['bstp_nmix_prpr']
     
     if "access_token" not in res_data:
         print(f"❌ 토큰 발급 실패: {json.dumps(res_data, indent=2, ensure_ascii=False)}")
@@ -54,18 +36,30 @@ def get_access_token():
 try:
     token = get_access_token()
     
-    # 코스피 지수 조회 (이후 로직은 동일)
+    # KOSPI 지수 조회
     url = "https://openapi.koreainvestment.com:9443/uapi/domestic-stock/v1/quotations/inquire-index-price"
     headers = {
         "Content-Type": "application/json", 
         "authorization": f"Bearer {token}", 
         "appkey": APP_KEY, 
-        "appsecret": APP_SECRET, # 조회 시에도 appsecret 사용
+        "appsecret": APP_SECRET,
         "tr_id": "FHP31010000"
     }
-    params = {"fid_cond_mrkt_div_code": "U", "fid_input_iscd": "0001"}
+    # 실수로 지워졌던 params 부분입니다.
+    params = {
+        "fid_cond_mrkt_div_code": "U", 
+        "fid_input_iscd": "0001"
+    }
+    
     res = requests.get(url, headers=headers, params=params)
-    kospi = res.json()['output']['bstp_nmix_prpr']
+    res_data = res.json()
+    
+    # 'output' 상자가 없으면 증권사가 보낸 진짜 에러 메시지를 출력합니다.
+    if 'output' not in res_data:
+        print(f"❌ KOSPI 조회 거절됨. 증권사 응답 내용:\n{json.dumps(res_data, indent=2, ensure_ascii=False)}")
+        raise Exception("코스피 데이터 수신 실패")
+        
+    kospi = res_data['output']['bstp_nmix_prpr']
 
     # 구글 시트 기록
     seoul_tz = pytz.timezone('Asia/Seoul')
