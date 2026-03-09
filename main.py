@@ -21,7 +21,8 @@ def get_access_token():
         "appkey": APP_KEY, 
         "secretkey": APP_SECRET
     }
-    res = requests.post(url, data=json.dumps(payload))
+    # res = requests.post(url, data=json.dumps(payload))
+    res = requests.post(url, json=payload)
     res_data = res.json()
     
     # 토큰이 없을 경우 에러 메시지 출력
