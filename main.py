@@ -11,9 +11,22 @@ GSPREAD_JSON = os.environ.get("GSPREAD_JSON")
 
 def get_access_token():
     url = "https://openapi.koreainvestment.com:9443/oauth2/tokenP"
-    payload = {"grant_type": "client_credentials", "appkey": APP_KEY, "secretkey": APP_SECRET}
+    payload = {
+        "grant_type": "client_credentials", 
+        "appkey": APP_KEY, 
+        "secretkey": APP_SECRET
+    }
     res = requests.post(url, data=json.dumps(payload))
-    return res.json()["access_token"]
+    res_data = res.json()
+    
+    # 토큰이 없을 경우 에러 메시지 출력
+    if "access_token" not in res_data:
+        print("❌ 한국투자증권 API 에러 발생!")
+        print(f"상태 코드: {res.status_code}")
+        print(f"에러 내용: {json.dumps(res_data, indent=2, ensure_ascii=False)}")
+        raise Exception("토큰 발급 실패")
+        
+    return res_data["access_token"]
 
 def get_market_data(token, code, div="U"):
     # 국내 지수(코스피: 0001, 코스닥: 1001) 조회
