@@ -9,6 +9,11 @@ APP_KEY = os.environ.get("KIS_APP_KEY")
 APP_SECRET = os.environ.get("KIS_APP_SECRET")
 GSPREAD_JSON = os.environ.get("GSPREAD_JSON")
 
+print(f"DEBUG: APP_KEY 존재 여부 = {APP_KEY is not None}")
+print(f"DEBUG: APP_SECRET 존재 여부 = {APP_SECRET is not None}")
+if APP_SECRET is None or APP_SECRET == "":
+    print("⚠️ 경고: APP_SECRET 값이 비어있습니다! GitHub Secrets 설정을 확인하세요.")
+
 def get_access_token():
     url = "https://openapi.koreainvestment.com:9443/oauth2/tokenP"
     payload = {
