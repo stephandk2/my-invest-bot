@@ -15,21 +15,32 @@ if APP_SECRET is None or APP_SECRET == "":
     print("⚠️ 경고: APP_SECRET 값이 비어있습니다! GitHub Secrets 설정을 확인하세요.")
 
 def get_access_token():
+    # 실전투자 URL (모의투자인 경우 openapiv.koreainvestment.com:9443 으로 수정 필요)
     url = "https://openapi.koreainvestment.com:9443/oauth2/tokenP"
+    
+    # 1. 헤더를 명시적으로 설정합니다.
+    headers = {"Content-Type": "application/json"}
+    
+    # 2. 페이로드를 구성합니다.
     payload = {
-        "grant_type": "client_credentials", 
-        "appkey": APP_KEY, 
+        "grant_type": "client_credentials",
+        "appkey": APP_KEY,
         "secretkey": APP_SECRET
     }
-    # res = requests.post(url, data=json.dumps(payload))
-    res = requests.post(url, json=payload)
+    
+    # 3. json= 옵션을 사용하여 자동으로 형식을 맞춥니다.
+    res = requests.post(url, headers=headers, json=payload)
     res_data = res.json()
     
-    # 토큰이 없을 경우 에러 메시지 출력
     if "access_token" not in res_data:
         print("❌ 한국투자증권 API 에러 발생!")
         print(f"상태 코드: {res.status_code}")
         print(f"에러 내용: {json.dumps(res_data, indent=2, ensure_ascii=False)}")
+        
+        # 만약 모의투자 키인데 실전 URL로 보냈을 경우에 대한 힌트
+        if res.status_code == 403:
+            print("💡 팁: '실전투자' 키가 맞는지, 혹은 '모의투자' URL을 써야 하는지 확인해 보세요.")
+            
         raise Exception("토큰 발급 실패")
         
     return res_data["access_token"]
