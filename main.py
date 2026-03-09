@@ -43,7 +43,7 @@ try:
         "authorization": f"Bearer {token}", 
         "appkey": APP_KEY, 
         "appsecret": APP_SECRET,
-        "tr_id": "FHP31010000"
+        "tr_id": "FHPUP02100000"
     }
     # 실수로 지워졌던 params 부분입니다.
     params = {
