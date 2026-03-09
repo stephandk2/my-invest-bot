@@ -28,8 +28,20 @@ def get_access_token():
     headers = {"Content-Type": "application/json; charset=UTF-8"}
     
     print(f"DEBUG: 토큰 발급 시도 중... (URL: {url})")
-    res = requests.post(url, headers=headers, data=json.dumps(payload))
+# 기존 코드
+    # res = requests.get(url, headers=headers, params=params)
+    # kospi = res.json()['output']['bstp_nmix_prpr']
+
+    # 변경할 코드 (거절 사유를 명확히 출력하도록 수정)
+    res = requests.get(url, headers=headers, params=params)
     res_data = res.json()
+    
+    # 'output' 상자가 없으면 증권사가 보낸 진짜 에러 메시지를 출력합니다.
+    if 'output' not in res_data:
+        print(f"❌ KOSPI 조회 거절됨. 증권사 응답 내용:\n{json.dumps(res_data, indent=2, ensure_ascii=False)}")
+        raise Exception("코스피 데이터 수신 실패")
+        
+    kospi = res_data['output']['bstp_nmix_prpr']
     
     if "access_token" not in res_data:
         print(f"❌ 토큰 발급 실패: {json.dumps(res_data, indent=2, ensure_ascii=False)}")
