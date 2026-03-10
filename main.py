@@ -63,7 +63,7 @@ try:
     for target in targets:
         name = target.get('Name')
         tr_id = str(target.get('TR_ID'))
-        symbol = str(target.get('Symbol'))
+        symbol = str(target.get('Symbol')).zfill(4) if tr_id == "FHPUP02100000" else str(target.get('Symbol'))
         excd = str(target.get('EXCD', ''))
         
         if not name or not tr_id or not symbol:
