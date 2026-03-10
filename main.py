@@ -4,6 +4,7 @@ import requests
 import gspread
 from datetime import datetime
 import pytz
+import yfinance as yf
 from oauth2client.service_account import ServiceAccountCredentials
 
 # 환경 변수 로드
@@ -18,49 +19,36 @@ def get_access_token():
     res = requests.post(url, headers=headers, json=payload)
     return res.json().get("access_token")
 
-def fetch_kis_data(token, tr_id, symbol, excd=""):
-    """자산 유형별 현재가 수집"""
+def fetch_kis_kospi(token, symbol):
+    """한국투자증권 API: 국내 지수 전용"""
+    url = "https://openapi.koreainvestment.com:9443/uapi/domestic-stock/v1/quotations/inquire-index-price"
     headers = {
         "Content-Type": "application/json",
         "authorization": f"Bearer {token}",
         "appkey": APP_KEY,
         "appsecret": APP_SECRET,
-        "tr_id": tr_id
+        "tr_id": "FHPUP02100000"
     }
-    
-    if tr_id == "FHPUP02100000": # 국내 지수
-        url = "https://openapi.koreainvestment.com:9443/uapi/domestic-stock/v1/quotations/inquire-index-price"
-        params = {"fid_cond_mrkt_div_code": "U", "fid_input_iscd": symbol}
-        res = requests.get(url, headers=headers, params=params)
-        return res.json().get('output', {}).get('bstp_nmix_prpr', "N/A")
-    
-    else: # 해외 지수, 선물, 환율
-        url = "https://openapi.koreainvestment.com:9443/uapi/overseas-price/v1/quotations/price"
-        params = {"AUTH": "", "EXCD": excd, "SYMB": symbol}
-        res = requests.get(url, headers=headers, params=params)
-        res_data = res.json()
-        
-        # [핵심 추가] output이 없으면 한국투자증권의 거절 메시지를 출력합니다.
-        if 'output' not in res_data:
-            print(f"⚠️ [{symbol}] 거절 사유: {res_data.get('msg1', res_data)}")
-            return "N/A"
-            
-        return res_data['output'].get('last', "N/A")
-    
-    if tr_id == "FHPUP02100000": # 국내 지수
-        url = "https://openapi.koreainvestment.com:9443/uapi/domestic-stock/v1/quotations/inquire-index-price"
-        params = {"fid_cond_mrkt_div_code": "U", "fid_input_iscd": symbol}
-        res = requests.get(url, headers=headers, params=params)
-        return res.json().get('output', {}).get('bstp_nmix_prpr', "N/A")
-    
-    else: # 해외 지수, 선물, 환율
-        url = "https://openapi.koreainvestment.com:9443/uapi/overseas-price/v1/quotations/price"
-        params = {"AUTH": "", "EXCD": excd, "SYMB": symbol}
-        res = requests.get(url, headers=headers, params=params)
-        return res.json().get('output', {}).get('last', "N/A")
+    # 모바일 시트에서 '1'로 입력되어도 '0001'로 안전하게 변환
+    params = {"fid_cond_mrkt_div_code": "U", "fid_input_iscd": str(symbol).zfill(4)}
+    res = requests.get(url, headers=headers, params=params)
+    return res.json().get('output', {}).get('bstp_nmix_prpr', "N/A")
+
+def fetch_yf_data(symbol):
+    """야후 파이낸스: 해외 지수, 환율, 원자재 전용"""
+    try:
+        ticker = yf.Ticker(symbol)
+        # 당일(또는 직전 거래일)의 종가를 가져옵니다
+        todays_data = ticker.history(period='1d')
+        if not todays_data.empty:
+            return round(todays_data['Close'].iloc[0], 2)
+        return "N/A"
+    except Exception as e:
+        print(f"⚠️ 야후 파이낸스 조회 오류 ({symbol}): {e}")
+        return "N/A"
 
 try:
-    # 1. 인증 및 시트 연결
+    # 1. KIS 인증 및 시트 연결
     token = get_access_token()
     creds_dict = json.loads(GSPREAD_JSON)
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"])
@@ -68,10 +56,9 @@ try:
     
     spreadsheet = client.open("2026_Invest_Ledger")
     config_sheet = spreadsheet.worksheet("Config")
-    log_sheet = spreadsheet.get_worksheet(0) # 첫 번째 시트(데이터 기록용)
+    log_sheet = spreadsheet.get_worksheet(0)
 
-    # 2. Config 시트에서 수집 대상 리스트 읽기
-    # get_all_records()는 첫 줄을 헤더로 인식하여 딕셔너리 리스트를 만듭니다.
+    # 2. 수집 대상 리스트 읽기
     targets = config_sheet.get_all_records()
     print(f"📊 수집 대상 {len(targets)}건 확인 완료")
 
@@ -81,15 +68,19 @@ try:
     
     for target in targets:
         name = target.get('Name')
-        tr_id = str(target.get('TR_ID'))
-        symbol = str(target.get('Symbol')).zfill(4) if tr_id == "FHPUP02100000" else str(target.get('Symbol'))
-        excd = str(target.get('EXCD', ''))
+        tr_id = str(target.get('TR_ID', ''))
+        symbol = str(target.get('Symbol', ''))
         
-        if not name or not tr_id or not symbol:
+        if not name or not symbol:
             continue
 
         try:
-            val = fetch_kis_data(token, tr_id, symbol, excd)
+            # TR_ID가 KOSPI 코드면 KIS API 호출, 아니면 야후 파이낸스 호출
+            if "FHPUP" in tr_id:
+                val = fetch_kis_kospi(token, symbol)
+            else:
+                val = fetch_yf_data(symbol)
+                
             log_sheet.append_row([now, name, val])
             print(f"✅ {name}: {val} 기록 완료")
         except Exception as e:
