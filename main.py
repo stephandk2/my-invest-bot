@@ -38,6 +38,25 @@ def fetch_kis_data(token, tr_id, symbol, excd=""):
         url = "https://openapi.koreainvestment.com:9443/uapi/overseas-price/v1/quotations/price"
         params = {"AUTH": "", "EXCD": excd, "SYMB": symbol}
         res = requests.get(url, headers=headers, params=params)
+        res_data = res.json()
+        
+        # [핵심 추가] output이 없으면 한국투자증권의 거절 메시지를 출력합니다.
+        if 'output' not in res_data:
+            print(f"⚠️ [{symbol}] 거절 사유: {res_data.get('msg1', res_data)}")
+            return "N/A"
+            
+        return res_data['output'].get('last', "N/A")
+    
+    if tr_id == "FHPUP02100000": # 국내 지수
+        url = "https://openapi.koreainvestment.com:9443/uapi/domestic-stock/v1/quotations/inquire-index-price"
+        params = {"fid_cond_mrkt_div_code": "U", "fid_input_iscd": symbol}
+        res = requests.get(url, headers=headers, params=params)
+        return res.json().get('output', {}).get('bstp_nmix_prpr', "N/A")
+    
+    else: # 해외 지수, 선물, 환율
+        url = "https://openapi.koreainvestment.com:9443/uapi/overseas-price/v1/quotations/price"
+        params = {"AUTH": "", "EXCD": excd, "SYMB": symbol}
+        res = requests.get(url, headers=headers, params=params)
         return res.json().get('output', {}).get('last', "N/A")
 
 try:
