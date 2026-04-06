@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   schedule:
     - cron: '00 6 * * 1-5'  # 한국시간 15:00 (평일)
-    - cron: '00 23 * * 0-4' # 한국시간 08:00 (평일)
+    - cron: '00 22 * * 0-4' # 한국시간 07:00 (평일)
 jobs:
   build:
     runs-on: ubuntu-latest
