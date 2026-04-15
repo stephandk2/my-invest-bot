@@ -62,9 +62,12 @@ try:
     targets = config_sheet.get_all_records()
     print(f"📊 수집 대상 {len(targets)}건 확인 완료")
 
-    # 3. 데이터 수집 및 기록
+    # 3. 데이터 수집
     seoul_tz = pytz.timezone('Asia/Seoul')
     now = datetime.now(seoul_tz).strftime('%Y-%m-%d %H:%M:%S')
+    
+    # 추가된 부분: 삽입할 데이터를 모아둘 리스트
+    new_rows = []
     
     for target in targets:
         name = target.get('Name')
@@ -81,12 +84,17 @@ try:
             else:
                 val = fetch_yf_data(symbol)
                 
-            log_sheet.append_row([now, name, val])
-            print(f"✅ {name}: {val} 기록 완료")
+            # append_row 대신 new_rows 리스트에 데이터 적재
+            new_rows.append([now, name, val])
+            print(f"✅ {name}: {val} 수집 완료")
         except Exception as e:
             print(f"❌ {name} 수집 실패: {e}")
 
-    print(f"🚀 전체 데이터 업데이트 완료: {now}")
+    # 4. 시트 최상단(헤더 바로 아래, 즉 2행)에 일괄 삽입 (API 호출 최적화)
+    if new_rows:
+        # new_rows를 넣으면 2행부터 차례대로 밀어넣습니다.
+        log_sheet.insert_rows(new_rows, row=2)
+        print(f"🚀 최상단(2행) 데이터 일괄 삽입 완료: {now}")
 
 except Exception as e:
     print(f"🚨 치명적 오류 발생: {e}")
