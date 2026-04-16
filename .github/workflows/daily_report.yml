@@ -33,6 +33,6 @@ jobs:
           # 깃허브 저장소 Settings -> Secrets에 등록해둔 변수들을 스크립트로 전달
           KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
           KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
-          GSPREAD_JSON: ${{ secrets.GSPREAD_JSON }}
+          GSPREAD_JSON: ${{ secrets.GSPREAD_SERVICE_ACCOUNT }}
         # 실행할 파이썬 파일 이름 (실제 파일 이름에 맞게 수정하세요. 예: main.py)
         run: python main.py
