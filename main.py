@@ -29,16 +29,31 @@ def fetch_kis_kospi(token, symbol):
         "appsecret": APP_SECRET,
         "tr_id": "FHPUP02100000"
     }
-    # 모바일 시트에서 '1'로 입력되어도 '0001'로 안전하게 변환
     params = {"fid_cond_mrkt_div_code": "U", "fid_input_iscd": str(symbol).zfill(4)}
     res = requests.get(url, headers=headers, params=params)
     return res.json().get('output', {}).get('bstp_nmix_prpr', "N/A")
+
+# 🎯 [신규 추가] 한국투자증권 API: 국내 개별 주식 가격 조회 전용 함수
+def fetch_kis_stock(token, symbol):
+    url = "https://openapi.koreainvestment.com:9443/uapi/domestic-stock/v1/quotations/inquire-price"
+    headers = {
+        "Content-Type": "application/json",
+        "authorization": f"Bearer {token}",
+        "appkey": APP_KEY,
+        "appsecret": APP_SECRET,
+        "tr_id": "FHKST01010100"
+    }
+    params = {
+        "fid_cond_mrkt_div_code": "J",
+        "fid_input_iscd": str(symbol).zfill(6) # 주식 코드는 항상 6자리
+    }
+    res = requests.get(url, headers=headers, params=params)
+    return res.json().get('output', {}).get('stck_prpr', "N/A")
 
 def fetch_yf_data(symbol):
     """야후 파이낸스: 해외 지수, 환율, 원자재 전용"""
     try:
         ticker = yf.Ticker(symbol)
-        # 당일(또는 직전 거래일)의 종가를 가져옵니다
         todays_data = ticker.history(period='1d')
         if not todays_data.empty:
             return round(todays_data['Close'].iloc[0], 2)
@@ -56,43 +71,67 @@ try:
     
     spreadsheet = client.open("2026_Invest_Ledger")
     config_sheet = spreadsheet.worksheet("Config")
+    # 🎯 [신규 추가] 관리 대상 목록 시트 연결
+    holdings_sheet = spreadsheet.worksheet("Asset_Holdings_Status")
     log_sheet = spreadsheet.get_worksheet(0)
 
-    # 2. 수집 대상 리스트 읽기
-    targets = config_sheet.get_all_records()
-    print(f"📊 수집 대상 {len(targets)}건 확인 완료")
+    # 2. 수집 대상 리스트 읽기 및 병합
+    targets = []
+    
+    # 2-1. 거시 지표 추가 (Config 시트)
+    config_records = config_sheet.get_all_records()
+    for row in config_records:
+        name = row.get('Name')
+        symbol = str(row.get('Symbol', ''))
+        if name and symbol:
+            targets.append({
+                'Name': name,
+                'TR_ID': str(row.get('TR_ID', '')),
+                'Symbol': symbol
+            })
+            
+    # 2-2. 개별 보유 종목 추가 (Asset_Holdings_Status 시트)
+    holding_records = holdings_sheet.get_all_records()
+    for row in holding_records:
+        name = row.get('name')
+        ticker = str(row.get('ticker', ''))
+        if name and ticker:
+            targets.append({
+                'Name': name,
+                'TR_ID': 'STOCK', # 개별 주식 처리를 위한 커스텀 플래그
+                'Symbol': ticker.zfill(6) # 앞자리 0 유실 방지
+            })
+
+    print(f"📊 수집 대상 총 {len(targets)}건 병합 완료 (거시지표 + 개별주식)")
 
     # 3. 데이터 수집
     seoul_tz = pytz.timezone('Asia/Seoul')
     now = datetime.now(seoul_tz).strftime('%Y-%m-%d %H:%M:%S')
     
-    # 추가된 부분: 삽입할 데이터를 모아둘 리스트
     new_rows = []
     
     for target in targets:
         name = target.get('Name')
-        tr_id = str(target.get('TR_ID', ''))
-        symbol = str(target.get('Symbol', ''))
-        
-        if not name or not symbol:
-            continue
+        tr_id = target.get('TR_ID')
+        symbol = target.get('Symbol')
 
         try:
-            # TR_ID가 KOSPI 코드면 KIS API 호출, 아니면 야후 파이낸스 호출
+            # TR_ID에 따라 알맞은 API 함수 분기
             if "FHPUP" in tr_id:
                 val = fetch_kis_kospi(token, symbol)
+            elif tr_id == "STOCK":
+                # 🎯 [신규 추가] 개별 주식은 별도 함수로 호출
+                val = fetch_kis_stock(token, symbol)
             else:
                 val = fetch_yf_data(symbol)
                 
-            # append_row 대신 new_rows 리스트에 데이터 적재
             new_rows.append([now, name, val])
             print(f"✅ {name}: {val} 수집 완료")
         except Exception as e:
             print(f"❌ {name} 수집 실패: {e}")
 
-    # 4. 시트 최상단(헤더 바로 아래, 즉 2행)에 일괄 삽입 (API 호출 최적화)
+    # 4. 시트 최상단(헤더 바로 아래, 즉 2행)에 일괄 삽입
     if new_rows:
-        # new_rows를 넣으면 2행부터 차례대로 밀어넣습니다.
         log_sheet.insert_rows(new_rows, row=2)
         print(f"🚀 최상단(2행) 데이터 일괄 삽입 완료: {now}")
 
