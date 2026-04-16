@@ -71,8 +71,7 @@ try:
     
     spreadsheet = client.open("2026_Invest_Ledger")
     config_sheet = spreadsheet.worksheet("Config")
-    # 🎯 [신규 추가] 관리 대상 목록 시트 연결
-    holdings_sheet = spreadsheet.worksheet("Asset_Holdings_Status")
+    holdings_sheet = spreadsheet.get_worksheet(1)  # 🎯 2번째 시트 지정
     log_sheet = spreadsheet.get_worksheet(0)
 
     # 2. 수집 대상 리스트 읽기 및 병합
@@ -93,13 +92,14 @@ try:
     # 2-2. 개별 보유 종목 추가 (Asset_Holdings_Status 시트)
     holding_records = holdings_sheet.get_all_records()
     for row in holding_records:
-        name = row.get('name')
-        ticker = str(row.get('ticker', ''))
+        name = row.get('Name') or row.get('name') or row.get('종목명') or row.get('자산명')
+        ticker = row.get('Ticker') or row.get('ticker') or row.get('Symbol') or row.get('종목코드')
+        
         if name and ticker:
             targets.append({
-                'Name': name,
-                'TR_ID': 'STOCK', # 개별 주식 처리를 위한 커스텀 플래그
-                'Symbol': ticker.zfill(6) # 앞자리 0 유실 방지
+                'Name': str(name),
+                'TR_ID': 'STOCK',
+                'Symbol': str(ticker).zfill(6)
             })
 
     print(f"📊 수집 대상 총 {len(targets)}건 병합 완료 (거시지표 + 개별주식)")
