@@ -25,7 +25,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests gspread yfinance oauth2client pytz
+          pip install requests gspread yfinance oauth2client pytz beautifulsoup4
 
       # 4. 파이썬 스크립트 실행 (Gmail 연동 변수 추가 매핑)
       - name: Run Script
