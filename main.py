@@ -10,13 +10,14 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import xml.etree.ElementTree as ET
+from bs4 import BeautifulSoup  # 🎯 [신규 추가] HTML 본문 파싱용 라이브러리
 
 # 환경 변수 로드
 APP_KEY = os.environ.get("KIS_APP_KEY")
 APP_SECRET = os.environ.get("KIS_APP_SECRET")
 GSPREAD_JSON = os.environ.get("GSPREAD_JSON")
-GMAIL_USER = os.environ.get("GMAIL_USER")          # 본인의 Gmail 주소
-GMAIL_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD") # 구글 계정에서 발급받은 16자리 앱 비밀번호
+GMAIL_USER = os.environ.get("GMAIL_USER")
+GMAIL_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD")
 
 def get_access_token():
     url = "https://openapi.koreainvestment.com:9443/oauth2/tokenP"
@@ -26,7 +27,6 @@ def get_access_token():
     return res.json().get("access_token")
 
 def fetch_kis_kospi(token, symbol):
-    """한국투자증권 API: 국내 지수 전용"""
     url = "https://openapi.koreainvestment.com:9443/uapi/domestic-stock/v1/quotations/inquire-index-price"
     headers = {
         "Content-Type": "application/json",
@@ -40,7 +40,6 @@ def fetch_kis_kospi(token, symbol):
     return res.json().get('output', {}).get('bstp_nmix_prpr', "N/A")
 
 def fetch_kis_stock(token, symbol):
-    """한국투자증권 API: 국내 개별 주식 가격 조회 전용"""
     url = "https://openapi.koreainvestment.com:9443/uapi/domestic-stock/v1/quotations/inquire-price"
     headers = {
         "Content-Type": "application/json",
@@ -57,7 +56,6 @@ def fetch_kis_stock(token, symbol):
     return res.json().get('output', {}).get('stck_prpr', "N/A")
 
 def fetch_yf_data(symbol):
-    """야후 파이낸스: 해외 지수, 환율, 원자재 전용"""
     try:
         ticker = yf.Ticker(symbol)
         todays_data = ticker.history(period='1d')
@@ -69,35 +67,63 @@ def fetch_yf_data(symbol):
         return "N/A"
 
 def fetch_naver_blog_rss(blog_id, author_name):
-    """네이버 블로그 RSS 피드 파싱 함수"""
-    url = f"https://rss.blog.naver.com/{blog_id}"
-    
-    # 깃허브 액션 IP 차단을 막기 위해 일반 브라우저인 것처럼 User-Agent 위장
+    """🎯 [고도화] 네이버 블로그 모바일 우회 본문 크롤링 함수"""
+    rss_url = f"https://rss.blog.naver.com/{blog_id}"
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     }
     
     try:
-        res = requests.get(url, headers=headers)
+        # 1. RSS에서 최신 글 메타데이터 획득
+        res = requests.get(rss_url, headers=headers)
         if res.status_code != 200:
-            return f"❌ {author_name} 블로그 접근 실패 (Status: {res.status_code})"
+            return f"❌ {author_name} 블로그 RSS 접근 실패 (Status: {res.status_code})"
             
-        # XML 데이터 파싱
         root = ET.fromstring(res.text)
-        
-        # 최근 게시글 1개만 추출
         item = root.find('.//item')
+        
         if item is not None:
             title = item.find('title').text
             link = item.find('link').text
             pub_date = item.find('pubDate').text
             
-            return f"[{author_name}] {title}\n  - 링크: {link}\n  - 발행: {pub_date}"
+            # 2. iframe 방어막 우회를 위해 모바일 웹 링크로 강제 치환
+            log_no = link.split('/')[-1]
+            mobile_url = f"https://m.blog.naver.com/{blog_id}/{log_no}"
+            
+            # 3. 모바일 페이지 접속 및 본문 텍스트 추출
+            mobile_res = requests.get(mobile_url, headers=headers)
+            mobile_res.raise_for_status()
+            soup = BeautifulSoup(mobile_res.text, 'html.parser')
+            
+            # 네이버 블로그 스마트에디터 본문 컨테이너 클래스 지정
+            content_div = soup.find('div', class_='se-main-container')
+            if not content_div:
+                content_div = soup.find('div', id='postViewArea') # 구버전 에디터 대비
+            
+            if content_div:
+                # 불필요한 줄바꿈 제거 및 텍스트만 깔끔하게 정제
+                body_text = content_div.get_text(separator='\n', strip=True)
+                # 이메일 용량 오버플로우 방지를 위해 글자수 제한 (최대 4000자)
+                if len(body_text) > 4000:
+                    body_text = body_text[:4000] + "\n\n... (데이터 무결성: 메일 용량 제한으로 이하 생략됨)"
+            else:
+                body_text = "⚠️ [본문 파싱 불가] 텍스트가 없거나 이미지만 존재하는 포스팅입니다."
+            
+            # 4. 최종 정형화 텍스트 블록 조립
+            result = f"[{author_name}] {title}\n"
+            result += f"  - 링크: {link}\n"
+            result += f"  - 발행: {pub_date}\n"
+            result += f"  - 본문 텍스트 추출:\n"
+            result += f"--------------------------------------------------\n"
+            result += f"{body_text}\n"
+            result += f"--------------------------------------------------\n"
+            return result
         else:
             return f"⚠️ {author_name} 블로그에 최근 게시글이 없습니다."
             
     except Exception as e:
-        return f"🚨 {author_name} 블로그 파싱 에러: {e}"
+        return f"🚨 {author_name} 블로그 본문 크롤링 에러: {e}"
 
 try:
     # 1. KIS 인증 및 시트 연결
@@ -113,30 +139,19 @@ try:
     # 2. 수집 대상 리스트 읽기 및 병합
     targets = []
     
-    # 2-1. 거시 지표 추가 (Config 시트)
     config_records = config_sheet.get_all_records()
     for row in config_records:
         name = row.get('Name')
         symbol = str(row.get('Symbol', ''))
         if name and symbol:
-            targets.append({
-                'Name': name,
-                'TR_ID': str(row.get('TR_ID', '')),
-                'Symbol': symbol
-            })
+            targets.append({'Name': name, 'TR_ID': str(row.get('TR_ID', '')), 'Symbol': symbol})
             
-    # 2-2. 개별 보유 종목 추가 (Asset_Holdings_Status 시트)
     holding_records = holdings_sheet.get_all_records()
     for row in holding_records:
         name = row.get('Name') or row.get('name') or row.get('종목명') or row.get('자산명')
         ticker = row.get('Ticker') or row.get('ticker') or row.get('Symbol') or row.get('종목코드')
-        
         if name and ticker:
-            targets.append({
-                'Name': str(name),
-                'TR_ID': 'STOCK',
-                'Symbol': str(ticker).zfill(6)
-            })
+            targets.append({'Name': str(name), 'TR_ID': 'STOCK', 'Symbol': str(ticker).zfill(6)})
 
     print(f"📊 수집 대상 총 {len(targets)}건 병합 완료 (거시지표 + 개별주식)")
 
@@ -178,7 +193,6 @@ try:
 
     # 4. 시트에 쓰지 않고, 규격화된 텍스트 이메일로 전송
     if new_rows:
-        # 제미나이가 바로 파싱할 수 있는 텍스트 블록 조립
         email_body = "=== LEDGER_DATA_DUMP ===\n"
         email_body += f"Generated at: {now} KST\n\n"
         
@@ -186,23 +200,19 @@ try:
             email_body += f"{idx + 1}. {row[1]} : {row[2]}\n"
             
         email_body += "\n========================="
-        
-        # 🎯 블로그 파싱 텍스트를 이메일 본문 하단에 병합
         email_body += blog_news_dump
 
-        # SMTP 이메일 객체 생성
         msg = MIMEMultipart()
         msg['From'] = GMAIL_USER
-        msg['To'] = GMAIL_USER  # 자기 자신에게 발송
+        msg['To'] = GMAIL_USER
         msg['Subject'] = f"[Ledger_Sync] Morning Market & Asset Data Dumps"
         msg.attach(MIMEText(email_body, 'plain', 'utf-8'))
 
-        # Gmail SSL 보안 서버 연동 후 발송
         try:
             with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
                 server.login(GMAIL_USER, GMAIL_PASSWORD)
                 server.sendmail(GMAIL_USER, GMAIL_USER, msg.as_string())
-            print(f"🚀 Gmail 전송 성공 (`[Ledger_Sync]` 패키지): {now}")
+            print(f"🚀 Gmail 전송 성공 (`[Ledger_Sync]` 텍스트 본문 추출 패키지): {now}")
         except Exception as mail_err:
             print(f"❌ 이메일 전송 단계 오류: {mail_err}")
     else:
