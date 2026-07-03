@@ -6,16 +6,15 @@ from datetime import datetime
 import pytz
 import yfinance as yf
 from oauth2client.service_account import ServiceAccountCredentials
-# 🎯 [신규 추가] 이메일 발송을 위한 라이브러리
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+import xml.etree.ElementTree as ET
 
 # 환경 변수 로드
 APP_KEY = os.environ.get("KIS_APP_KEY")
 APP_SECRET = os.environ.get("KIS_APP_SECRET")
 GSPREAD_JSON = os.environ.get("GSPREAD_JSON")
-# 🎯 [신규 추가] Gmail 연동을 위한 환경 변수
 GMAIL_USER = os.environ.get("GMAIL_USER")          # 본인의 Gmail 주소
 GMAIL_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD") # 구글 계정에서 발급받은 16자리 앱 비밀번호
 
@@ -69,8 +68,39 @@ def fetch_yf_data(symbol):
         print(f"⚠️ 야후 파이낸스 조회 오류 ({symbol}): {e}")
         return "N/A"
 
+def fetch_naver_blog_rss(blog_id, author_name):
+    """네이버 블로그 RSS 피드 파싱 함수"""
+    url = f"https://rss.blog.naver.com/{blog_id}"
+    
+    # 깃허브 액션 IP 차단을 막기 위해 일반 브라우저인 것처럼 User-Agent 위장
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+    
+    try:
+        res = requests.get(url, headers=headers)
+        if res.status_code != 200:
+            return f"❌ {author_name} 블로그 접근 실패 (Status: {res.status_code})"
+            
+        # XML 데이터 파싱
+        root = ET.fromstring(res.text)
+        
+        # 최근 게시글 1개만 추출
+        item = root.find('.//item')
+        if item is not None:
+            title = item.find('title').text
+            link = item.find('link').text
+            pub_date = item.find('pubDate').text
+            
+            return f"[{author_name}] {title}\n  - 링크: {link}\n  - 발행: {pub_date}"
+        else:
+            return f"⚠️ {author_name} 블로그에 최근 게시글이 없습니다."
+            
+    except Exception as e:
+        return f"🚨 {author_name} 블로그 파싱 에러: {e}"
+
 try:
-    # 1. KIS 인증 및 시트 연결 (수집 대상을 읽기 위해 기존 조회 기능은 유지)
+    # 1. KIS 인증 및 시트 연결
     token = get_access_token()
     creds_dict = json.loads(GSPREAD_JSON)
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"])
@@ -134,7 +164,19 @@ try:
         except Exception as e:
             print(f"❌ {name} 수집 실패: {e}")
 
-    # 🎯 [구조 변경] 4. 시트에 쓰지 않고, 규격화된 텍스트 이메일로 전송
+    # 3-2. 네이버 블로그 전문가 인사이트 파싱
+    blog_targets = [
+        {"id": "worldforsale", "name": "에드몽당테스"},
+        {"id": "hyy4467", "name": "황이영"},
+        {"id": "ranto28", "name": "메르"}
+    ]
+
+    blog_news_dump = "\n\n=== EXPERT_BLOG_UPDATES ===\n"
+    for blog in blog_targets:
+        result = fetch_naver_blog_rss(blog["id"], blog["name"])
+        blog_news_dump += result + "\n\n"
+
+    # 4. 시트에 쓰지 않고, 규격화된 텍스트 이메일로 전송
     if new_rows:
         # 제미나이가 바로 파싱할 수 있는 텍스트 블록 조립
         email_body = "=== LEDGER_DATA_DUMP ===\n"
@@ -144,6 +186,9 @@ try:
             email_body += f"{idx + 1}. {row[1]} : {row[2]}\n"
             
         email_body += "\n========================="
+        
+        # 🎯 블로그 파싱 텍스트를 이메일 본문 하단에 병합
+        email_body += blog_news_dump
 
         # SMTP 이메일 객체 생성
         msg = MIMEMultipart()
