@@ -6,11 +6,18 @@ from datetime import datetime
 import pytz
 import yfinance as yf
 from oauth2client.service_account import ServiceAccountCredentials
+# 🎯 [신규 추가] 이메일 발송을 위한 라이브러리
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 # 환경 변수 로드
 APP_KEY = os.environ.get("KIS_APP_KEY")
 APP_SECRET = os.environ.get("KIS_APP_SECRET")
 GSPREAD_JSON = os.environ.get("GSPREAD_JSON")
+# 🎯 [신규 추가] Gmail 연동을 위한 환경 변수
+GMAIL_USER = os.environ.get("GMAIL_USER")          # 본인의 Gmail 주소
+GMAIL_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD") # 구글 계정에서 발급받은 16자리 앱 비밀번호
 
 def get_access_token():
     url = "https://openapi.koreainvestment.com:9443/oauth2/tokenP"
@@ -33,8 +40,8 @@ def fetch_kis_kospi(token, symbol):
     res = requests.get(url, headers=headers, params=params)
     return res.json().get('output', {}).get('bstp_nmix_prpr', "N/A")
 
-# 🎯 [신규 추가] 한국투자증권 API: 국내 개별 주식 가격 조회 전용 함수
 def fetch_kis_stock(token, symbol):
+    """한국투자증권 API: 국내 개별 주식 가격 조회 전용"""
     url = "https://openapi.koreainvestment.com:9443/uapi/domestic-stock/v1/quotations/inquire-price"
     headers = {
         "Content-Type": "application/json",
@@ -45,7 +52,7 @@ def fetch_kis_stock(token, symbol):
     }
     params = {
         "fid_cond_mrkt_div_code": "J",
-        "fid_input_iscd": str(symbol).zfill(6) # 주식 코드는 항상 6자리
+        "fid_input_iscd": str(symbol).zfill(6)
     }
     res = requests.get(url, headers=headers, params=params)
     return res.json().get('output', {}).get('stck_prpr', "N/A")
@@ -63,7 +70,7 @@ def fetch_yf_data(symbol):
         return "N/A"
 
 try:
-    # 1. KIS 인증 및 시트 연결
+    # 1. KIS 인증 및 시트 연결 (수집 대상을 읽기 위해 기존 조회 기능은 유지)
     token = get_access_token()
     creds_dict = json.loads(GSPREAD_JSON)
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"])
@@ -71,9 +78,8 @@ try:
     
     spreadsheet = client.open("2026_Invest_Ledger")
     config_sheet = spreadsheet.worksheet("Config")
-    holdings_sheet = spreadsheet.get_worksheet(1)  # 🎯 2번째 시트 지정
-    log_sheet = spreadsheet.get_worksheet(0)
-
+    holdings_sheet = spreadsheet.get_worksheet(1)  
+    
     # 2. 수집 대상 리스트 읽기 및 병합
     targets = []
     
@@ -116,11 +122,9 @@ try:
         symbol = target.get('Symbol')
 
         try:
-            # TR_ID에 따라 알맞은 API 함수 분기
             if "FHPUP" in tr_id:
                 val = fetch_kis_kospi(token, symbol)
             elif tr_id == "STOCK":
-                # 🎯 [신규 추가] 개별 주식은 별도 함수로 호출
                 val = fetch_kis_stock(token, symbol)
             else:
                 val = fetch_yf_data(symbol)
@@ -130,10 +134,34 @@ try:
         except Exception as e:
             print(f"❌ {name} 수집 실패: {e}")
 
-    # 4. 시트 최상단(헤더 바로 아래, 즉 2행)에 일괄 삽입
+    # 🎯 [구조 변경] 4. 시트에 쓰지 않고, 규격화된 텍스트 이메일로 전송
     if new_rows:
-        log_sheet.insert_rows(new_rows, row=2)
-        print(f"🚀 최상단(2행) 데이터 일괄 삽입 완료: {now}")
+        # 제미나이가 바로 파싱할 수 있는 텍스트 블록 조립
+        email_body = "=== LEDGER_DATA_DUMP ===\n"
+        email_body += f"Generated at: {now} KST\n\n"
+        
+        for idx, row in enumerate(new_rows):
+            email_body += f"{idx + 1}. {row[1]} : {row[2]}\n"
+            
+        email_body += "\n========================="
+
+        # SMTP 이메일 객체 생성
+        msg = MIMEMultipart()
+        msg['From'] = GMAIL_USER
+        msg['To'] = GMAIL_USER  # 자기 자신에게 발송
+        msg['Subject'] = f"[Ledger_Sync] Morning Market & Asset Data Dumps"
+        msg.attach(MIMEText(email_body, 'plain', 'utf-8'))
+
+        # Gmail SSL 보안 서버 연동 후 발송
+        try:
+            with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+                server.login(GMAIL_USER, GMAIL_PASSWORD)
+                server.sendmail(GMAIL_USER, GMAIL_USER, msg.as_string())
+            print(f"🚀 Gmail 전송 성공 (`[Ledger_Sync]` 패키지): {now}")
+        except Exception as mail_err:
+            print(f"❌ 이메일 전송 단계 오류: {mail_err}")
+    else:
+        print("⚠️ 수집된 데이터가 없어 이메일을 전송하지 않았습니다.")
 
 except Exception as e:
     print(f"🚨 치명적 오류 발생: {e}")
