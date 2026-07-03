@@ -16,8 +16,8 @@ APP_KEY = os.environ.get("KIS_APP_KEY")
 APP_SECRET = os.environ.get("KIS_APP_SECRET")
 GSPREAD_JSON = os.environ.get("GSPREAD_JSON")
 # 🎯 [신규 추가] Gmail 연동을 위한 환경 변수
-GMAIL_USER = os.environ.get("GMAIL_USER")          # 본인의 Gmail 주소
-GMAIL_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD") # 구글 계정에서 발급받은 16자리 앱 비밀번호
+GMAIL_USER = os.environ.get("gyatrol@gmail.com")          # 본인의 Gmail 주소
+GMAIL_PASSWORD = os.environ.get("ebdv srmt duvx sxua") # 구글 계정에서 발급받은 16자리 앱 비밀번호
 
 def get_access_token():
     url = "https://openapi.koreainvestment.com:9443/oauth2/tokenP"
